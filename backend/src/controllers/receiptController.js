@@ -25,8 +25,8 @@ export const getReceipts = asyncHandler(async (req, res) => {
   });
 });
 
-export const getDashboardStats = asyncHandler(async (_req, res) => {
-  const stats = await receiptService.getDashboardStats();
+export const getDashboardStats = asyncHandler(async (req, res) => {
+  const stats = await receiptService.getDashboardStats(req.query);
   res.json({
     status: 'success',
     data: stats,

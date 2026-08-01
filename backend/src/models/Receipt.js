@@ -3,6 +3,7 @@ import {
   FREIGHT_TYPES,
   ACKNOWLEDGEMENT_STATUSES,
   VERIFICATION_STATUSES,
+  ROUTES,
 } from '../constants/receipt.js';
 
 const receiptSchema = new mongoose.Schema(
@@ -11,6 +12,12 @@ const receiptSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+      index: true,
+    },
+    route: {
+      type: String,
+      enum: ROUTES,
+      default: 'MALUR-MASTHI',
       index: true,
     },
     date: {

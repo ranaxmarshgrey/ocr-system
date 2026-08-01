@@ -47,6 +47,7 @@ export default function VerificationForm({
 
   const [formData, setFormData] = useState({
     lrNumber: ocrData.lrNumber || '',
+    route: ocrData.route || 'MALUR-MASTHI',
     date: ocrData.date || todayStr,
     consignor: ocrData.consignor || '',
     consignee: ocrData.consignee || '',
@@ -126,6 +127,37 @@ export default function VerificationForm({
 
         {/* Form fields grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Transport Route Selection */}
+          <div className="space-y-1 col-span-1 md:col-span-2">
+            <label className="font-semibold text-xs text-slate-300 block">
+              Transport Route <span className="text-emerald-400">*</span>
+            </label>
+            <div className="grid grid-cols-2 gap-2 pt-0.5">
+              <button
+                type="button"
+                onClick={() => handleChange('route', 'MALUR-MASTHI')}
+                className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                  formData.route === 'MALUR-MASTHI'
+                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-md shadow-emerald-950/40'
+                    : 'bg-slate-900 border-white/10 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                🚛 MALUR-MASTHI ROUTE
+              </button>
+              <button
+                type="button"
+                onClick={() => handleChange('route', 'NELAMANGALA')}
+                className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                  formData.route === 'NELAMANGALA'
+                    ? 'bg-blue-500/20 border-blue-500 text-blue-300 shadow-md shadow-blue-950/40'
+                    : 'bg-slate-900 border-white/10 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                🚚 NELAMANGALA ROUTE
+              </button>
+            </div>
+          </div>
+
           {/* LR Number */}
           <div className="space-y-1">
             <div className="flex justify-between items-center text-xs">

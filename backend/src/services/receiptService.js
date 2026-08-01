@@ -38,6 +38,10 @@ export async function getAllReceipts(params = {}) {
   }
 
   // Specific field filters
+  if (params.route && params.route !== 'All') {
+    filter.route = params.route;
+  }
+
   if (params.acknowledgementStatus) {
     filter.acknowledgementStatus = params.acknowledgementStatus;
   }
@@ -98,7 +102,12 @@ export async function deleteReceipt(id) {
 /**
  * Aggregate dashboard statistics
  */
-export async function getDashboardStats() {
+export async function getDashboardStats(params = {}) {
+  const baseFilter = {};
+  if (params.route && params.route !== 'All') {
+    baseFilter.route = params.route;
+  }
+
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
@@ -111,13 +120,13 @@ export async function getDashboardStats() {
     toPayCount,
     destinations,
   ] = await Promise.all([
-    Receipt.countDocuments(),
-    Receipt.countDocuments({ createdAt: { $gte: todayStart } }),
-    Receipt.countDocuments({ acknowledgementStatus: 'Pending' }),
-    Receipt.countDocuments({ acknowledgementStatus: 'Received' }),
-    Receipt.countDocuments({ freightType: 'Paid' }),
-    Receipt.countDocuments({ freightType: 'To Pay' }),
-    Receipt.distinct('destination'),
+    Receipt.countDocuments(baseFilter),
+    Receipt.countDocuments({ ...baseFilter, createdAt: { $gte: todayStart } }),
+    Receipt.countDocuments({ ...baseFilter, acknowledgementStatus: 'Pending' }),
+    Receipt.countDocuments({ ...baseFilter, acknowledgementStatus: 'Received' }),
+    Receipt.countDocuments({ ...baseFilter, freightType: 'Paid' }),
+    Receipt.countDocuments({ ...baseFilter, freightType: 'To Pay' }),
+    Receipt.distinct('destination', baseFilter),
   ]);
 
   return {

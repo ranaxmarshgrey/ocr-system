@@ -3,12 +3,14 @@ import {
   FREIGHT_TYPES,
   ACKNOWLEDGEMENT_STATUSES,
   VERIFICATION_STATUSES,
+  ROUTES,
 } from '../constants/receipt.js';
 
 const optionalString = z.string().trim().optional().or(z.literal(''));
 
 const createReceiptSchema = z.object({
   lrNumber: z.string().trim().min(1, 'LR Number is required'),
+  route: z.enum(ROUTES).optional(),
   date: z.coerce.date({ invalid_type_error: 'Date must be a valid date' }),
   consignor: z.string().trim().min(1, 'Consignor is required'),
   consignee: z.string().trim().min(1, 'Consignee is required'),

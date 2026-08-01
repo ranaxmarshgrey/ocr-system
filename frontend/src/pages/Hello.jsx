@@ -143,6 +143,7 @@ function exportToCSV(receiptsList) {
 
   const rows = receiptsList.map((r) => [
     `"${(r.lrNumber || '').replace(/"/g, '""')}"`,
+    `"${(r.route || 'MALUR-MASTHI').replace(/"/g, '""')}"`,
     `"${r.date ? new Date(r.date).toISOString().split('T')[0] : ''}"`,
     `"${(r.consignor || '').replace(/"/g, '""')}"`,
     `"${(r.consignee || '').replace(/"/g, '""')}"`,
@@ -218,6 +219,9 @@ function ReceiptModal({ receipt, onClose, onStatusUpdate }) {
 
           {/* Status badges row */}
           <div className="flex flex-wrap gap-2">
+            <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+              🚚 {receipt.route || 'MALUR-MASTHI'}
+            </span>
             <span className={`badge ${getStatusBadgeClass(receipt.acknowledgementStatus)}`}>
               {receipt.acknowledgementStatus === 'Pending' ? icons.clock : icons.check}
               {receipt.acknowledgementStatus}
@@ -312,6 +316,7 @@ export default function Hello() {
 
   // Filters
   const [search, setSearch] = useState('');
+  const [routeFilter, setRouteFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [freightFilter, setFreightFilter] = useState('All');
   const [destination, setDestination] = useState('');
@@ -334,7 +339,9 @@ export default function Hello() {
   /* ── Fetch stats ─────────────────────────────── */
   const fetchStats = useCallback(async () => {
     try {
-      const data = await getDashboardStats();
+      const params = {};
+      if (routeFilter !== 'All') params.route = routeFilter;
+      const data = await getDashboardStats(params);
       setStats(data);
       setError(null);
     } catch (err) {
@@ -342,7 +349,7 @@ export default function Hello() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [routeFilter]);
 
   /* ── Fetch receipts ──────────────────────────── */
   const fetchReceipts = useCallback(async () => {
@@ -350,6 +357,7 @@ export default function Hello() {
     try {
       const params = {};
       if (search.trim()) params.search = search.trim();
+      if (routeFilter !== 'All') params.route = routeFilter;
       if (statusFilter !== 'All') params.acknowledgementStatus = statusFilter;
       if (freightFilter !== 'All') params.freightType = freightFilter;
       if (destination) params.destination = destination;
@@ -363,7 +371,7 @@ export default function Hello() {
     } finally {
       setReceiptsLoading(false);
     }
-  }, [search, statusFilter, freightFilter, destination, startDate, endDate, showToast]);
+  }, [search, routeFilter, statusFilter, freightFilter, destination, startDate, endDate, showToast]);
 
   /* ── Initial load ──────────────────────── */
   useEffect(() => {
@@ -404,12 +412,13 @@ export default function Hello() {
 
   /* ── Debounced fetch on filter change ─────────── */
   useEffect(() => {
+    fetchStats();
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       fetchReceipts();
     }, 300);
     return () => clearTimeout(debounceRef.current);
-  }, [search, statusFilter, freightFilter, destination, startDate, endDate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, routeFilter, statusFilter, freightFilter, destination, startDate, endDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Status update handler ──────────────────── */
   const handleStatusUpdate = async (id, newStatus) => {
@@ -440,7 +449,32 @@ export default function Hello() {
     <div className="min-h-dvh bg-slate-950 text-slate-100">
       <main className="mx-auto max-w-5xl px-4 py-6 safe-top safe-bottom">
 
-        {/* ── Header ───────────────────────────────── */}
+        {/* ── Route Selection Banner ──────────────── */}
+        <div className="mb-5 animate-slide-up">
+          <label className="text-[0.65rem] font-bold uppercase tracking-widest text-slate-500 mb-1.5 block">
+            Select Route Ledger
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { id: 'All', label: '🌐 ALL ROUTES' },
+              { id: 'MALUR-MASTHI', label: '🚛 MALUR-MASTHI' },
+              { id: 'NELAMANGALA', label: '🚚 NELAMANGALA' },
+            ].map((route) => (
+              <button
+                key={route.id}
+                onClick={() => setRouteFilter(route.id)}
+                className={`py-2.5 px-2 rounded-xl text-xs font-bold transition border text-center ${
+                  routeFilter === route.id
+                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-md shadow-emerald-950/40'
+                    : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                }`}
+                id={`route-tab-${route.id.toLowerCase()}`}
+              >
+                {route.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <header className="flex items-center justify-between mb-6 animate-fade-in">
           <div>
             <div className="flex items-center gap-2">
@@ -535,6 +569,36 @@ export default function Hello() {
 
         {/* ── Filter Bar ──────────────────────────── */}
         <div className="flex flex-wrap gap-3 mb-4 animate-slide-up delay-200">
+          {/* Quick Date Shortcuts for Daily Cross-Checking */}
+          <div className="filter-tabs">
+            <button
+              className={`filter-tab ${!startDate && !endDate ? 'active' : ''}`}
+              onClick={() => { setStartDate(''); setEndDate(''); }}
+            >
+              All Dates
+            </button>
+            <button
+              className={`filter-tab ${startDate === new Date().toISOString().split('T')[0] && endDate === new Date().toISOString().split('T')[0] ? 'active' : ''}`}
+              onClick={() => {
+                const today = new Date().toISOString().split('T')[0];
+                setStartDate(today);
+                setEndDate(today);
+              }}
+            >
+              Today
+            </button>
+            <button
+              className={`filter-tab ${startDate === new Date(Date.now() - 86400000).toISOString().split('T')[0] && endDate === new Date(Date.now() - 86400000).toISOString().split('T')[0] ? 'active' : ''}`}
+              onClick={() => {
+                const yest = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+                setStartDate(yest);
+                setEndDate(yest);
+              }}
+            >
+              Yesterday
+            </button>
+          </div>
+
           {/* Status tabs */}
           <div className="filter-tabs">
             {statusTabs.map((tab) => (
@@ -668,9 +732,12 @@ export default function Hello() {
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-sm text-slate-100 truncate">
                         LR #{r.lrNumber}
+                      </span>
+                      <span className="text-[0.65rem] font-bold px-2 py-0.5 rounded bg-slate-800 text-emerald-400 border border-slate-700">
+                        {r.route || 'MALUR-MASTHI'}
                       </span>
                       <span className={`badge ${getStatusBadgeClass(r.acknowledgementStatus)}`}>
                         {r.acknowledgementStatus}

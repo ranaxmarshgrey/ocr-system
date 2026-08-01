@@ -79,10 +79,16 @@ export async function getReceipts() {
 
 /**
  * Get dashboard statistics (today's count, total, pending, received, paid, to-pay)
+ * @param {object} params - optional { route }
  * @returns {Promise<object>} { totalCount, todayCount, pendingCount, receivedCount, paidCount, toPayCount, uniqueDestinations }
  */
-export async function getDashboardStats() {
-  const response = await fetch('/api/receipts/stats');
+export async function getDashboardStats(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value && value !== 'All') query.set(key, value);
+  });
+  const url = `/api/receipts/stats${query.toString() ? `?${query}` : ''}`;
+  const response = await fetch(url);
   const body = await response.json().catch(() => null);
 
   if (!response.ok) {
