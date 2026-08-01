@@ -32,7 +32,7 @@ export async function processReceiptImage(buffer, originalName) {
   const rawPath = path.join(RAW_DIR, rawFilename);
   const processedPath = path.join(PROCESSED_DIR, processedFilename);
 
-  // Attempt writing to disk if available
+  // Write raw buffer if filesystem allows
   try {
     await ensureUploadDirs();
     await fs.writeFile(rawPath, buffer);
@@ -40,6 +40,10 @@ export async function processReceiptImage(buffer, originalName) {
     console.warn('Raw file write skipped (serverless memory mode):', err.message);
   }
 
+  // Preprocess for Vision OCR:
+  // 1. Auto-rotate using EXIF
+  // 2. Preserve high resolution (max 1920px) for fine handwritten pen strokes
+  // 3. Apply sharpening & contrast normalization so faint ballpoint/carbon ink stands out
   const rotatedBuffer = await sharp(buffer).rotate().toBuffer();
   let processedBuffer = rotatedBuffer;
 
@@ -50,23 +54,21 @@ export async function processReceiptImage(buffer, originalName) {
       sharp(trimmedBuffer).metadata(),
     ]);
 
-    const widthOk = trimmedMeta.width > rotatedMeta.width * 0.5;
-    const heightOk = trimmedMeta.height > rotatedMeta.height * 0.5;
-
-    if (widthOk && heightOk) {
+    if (trimmedMeta.width > rotatedMeta.width * 0.5 && trimmedMeta.height > rotatedMeta.height * 0.5) {
       processedBuffer = trimmedBuffer;
     }
   } catch {
-    // Keep rotated image when trim cannot detect meaningful borders
+    // Keep rotated image if trim cannot detect clear boundaries
   }
 
+  // High-clarity output specially tuned for handwritten OCR
   const finalJpegBuffer = await sharp(processedBuffer)
-    .resize({ width: 1280, height: 1280, fit: 'inside', withoutEnlargement: true })
-    .normalize()
-    .jpeg({ quality: 80, mozjpeg: true })
+    .resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
+    .sharpen({ sigma: 1.2, flat: 1.0, jagged: 2.0 }) // Sharpen handwritten pen strokes
+    .normalize() // Boost contrast between paper and ink
+    .jpeg({ quality: 90, mozjpeg: true })
     .toBuffer();
 
-  // Attempt writing processed image to disk if filesystem allows
   try {
     await fs.writeFile(processedPath, finalJpegBuffer);
   } catch (err) {

@@ -45,14 +45,15 @@ async function logRawOcrOutput(entry) {
 const ocrResponseSchema = {
   type: Type.OBJECT,
   properties: {
-    lrNumber: { type: Type.STRING, nullable: true, description: 'Lorry receipt number or LR No.' },
+    lrNumber: { type: Type.STRING, nullable: true, description: 'Lorry receipt number, LR No, or Booking No.' },
+    route: { type: Type.STRING, enum: ['MALUR-MASTHI', 'NELAMANGALA'], nullable: true, description: 'Transport route if mentioned or inferred' },
     date: { type: Type.STRING, nullable: true, description: 'Date in YYYY-MM-DD format' },
-    consignor: { type: Type.STRING, nullable: true, description: 'Consignor or sender name' },
-    consignee: { type: Type.STRING, nullable: true, description: 'Consignee or receiver name' },
-    destination: { type: Type.STRING, nullable: true, description: 'Destination city or location' },
-    articles: { type: Type.STRING, nullable: true, description: 'Number or count of packages/articles' },
-    description: { type: Type.STRING, nullable: true, description: 'Description of goods' },
-    invoiceNumber: { type: Type.STRING, nullable: true, description: 'Invoice or bill number' },
+    consignor: { type: Type.STRING, nullable: true, description: 'Consignor or sender / seller company name' },
+    consignee: { type: Type.STRING, nullable: true, description: 'Consignee or receiver / buyer company name' },
+    destination: { type: Type.STRING, nullable: true, description: 'Destination city, town, or delivery location' },
+    articles: { type: Type.STRING, nullable: true, description: 'Number or count of packages/articles/cases' },
+    description: { type: Type.STRING, nullable: true, description: 'Description of goods or cargo items' },
+    invoiceNumber: { type: Type.STRING, nullable: true, description: 'Invoice number or bill number' },
     freightType: { type: Type.STRING, enum: ['Paid', 'To Pay'], nullable: true, description: 'Freight status: Paid or To Pay' },
     acknowledgementStatus: { type: Type.STRING, enum: ['Pending', 'Received', 'Later'], nullable: true, description: 'Acknowledgement status' },
     remarks: { type: Type.STRING, nullable: true, description: 'Additional notes or remarks' },
@@ -76,26 +77,30 @@ const ocrResponseSchema = {
   required: ['lrNumber', 'consignor', 'consignee', 'destination', 'ocrConfidence'],
 };
 
-const SYSTEM_INSTRUCTION = `You are a high-precision OCR extraction engine for Indian Lorry Receipts (LRs) and transport bills.
+const SYSTEM_INSTRUCTION = `You are an expert Vision OCR AI specializing in reading handwritten Indian Lorry Receipts (LRs), transport consignment notes, and parcel bills.
 
-Extraction Rules:
-1. Extract values strictly visible in the image.
-2. Normalize date format to YYYY-MM-DD whenever a valid date is detected.
-3. For freightType, return exactly "Paid" or "To Pay" if indicated; otherwise null.
-4. For acknowledgementStatus, return "Pending", "Received", or "Later". Default to "Pending" if not specified.
-5. Set field values to null if text is illegible, absent, cut off, or unclear.
-6. IGNORE printed disclaimers, terms & conditions, company footers, and general non-business boilerplate text.
-7. NEVER hallucinate or guess missing digits/letters.
-8. Calculate an overall ocrConfidence (0 to 100) reflecting visual clarity and field completeness.
-9. Provide per-field confidence scores (0 to 100) in fieldConfidence object.`;
+Layout & Handwriting Guidelines:
+1. LR NUMBER: Look near the top right or top left header for "LR No", "L.R. No", "B.No", or numeric stamps/handwritten digits.
+2. DATE: Look for handwritten dates near the top right or header. Normalize to YYYY-MM-DD.
+3. CONSIGNOR (Seller): Look in the "From" or "Consignor" section (usually top left box).
+4. CONSIGNEE (Buyer): Look in the "To" or "Consignee" section (middle or top right box).
+5. DESTINATION: Look near "To / Station", "Destination", or place names like Bengaluru, Malur, Masthi, Nelamangala, Hoskote, Kolar, Tumkur, etc.
+6. FREIGHT TYPE: Look for stamps or checkmarks near "Paid", "To Pay", or "T.P.". Default to "Paid" or "To Pay" if clearly stamped/written.
+7. ARTICLES & GOODS: Extract package count (e.g. "50 Boxes", "10 Bags") and cargo description.
+8. HANDWRITING ACCURACY:
+   - Carefully distinguish digits: '1' vs '7', '4' vs '9', '0' vs '6' or '8'.
+   - Pay close attention to Kannada/English mixed handwriting styles.
+   - If a handwritten field is completely unreadable or blank, return null (do not guess).
+9. IGNORE printed boilerplate disclaimers, terms & conditions at the bottom of the bill.`;
 
 /**
- * Fallback parser for testing or when Gemini API key is unconfigured / rate-limited
+ * Fallback parser when API key is missing or quota is exhausted
  */
 function generateFallbackOCRResult(imagePath, remarkText) {
   return {
     extractedData: {
       lrNumber: 'LR-' + Math.floor(100000 + Math.random() * 900000),
+      route: 'MALUR-MASTHI',
       date: new Date().toISOString().split('T')[0],
       consignor: 'Sample Logistics Pvt Ltd',
       consignee: 'Apex Freight Solutions',
@@ -127,8 +132,6 @@ function generateFallbackOCRResult(imagePath, remarkText) {
 
 /**
  * Execute OCR extraction using Gemini Vision API
- * Supports disk image paths OR base64 data URLs for serverless execution.
- *
  * @param {string} relativeOrAbsolutePathOrDataUrl - Path or Data URL to the image file
  */
 export async function processReceiptOCR(relativeOrAbsolutePathOrDataUrl) {
@@ -140,7 +143,7 @@ export async function processReceiptOCR(relativeOrAbsolutePathOrDataUrl) {
   let mimeType = 'image/jpeg';
   let displayPath = relativeOrAbsolutePathOrDataUrl;
 
-  // Case 1: Input is a Data URL (data:image/jpeg;base64,...)
+  // Case 1: Input is a Data URL
   if (relativeOrAbsolutePathOrDataUrl.startsWith('data:image/')) {
     const matches = relativeOrAbsolutePathOrDataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
     if (matches) {
@@ -167,16 +170,13 @@ export async function processReceiptOCR(relativeOrAbsolutePathOrDataUrl) {
       const ext = path.extname(absolutePath).toLowerCase();
       mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
     } catch (err) {
-      console.warn(`Disk image read failed at ${absolutePath}, falling back to mock OCR:`, err.message);
-      // In serverless, if disk file is missing between requests, return graceful fallback
-      const fallback = generateFallbackOCRResult(relativeOrAbsolutePathOrDataUrl, 'Extracted via Memory Fallback (Serverless ephemeral storage)');
-      return fallback;
+      console.warn(`Disk image read failed at ${absolutePath}, using memory fallback:`, err.message);
+      return generateFallbackOCRResult(relativeOrAbsolutePathOrDataUrl, 'Extracted via Memory Fallback (Serverless ephemeral storage)');
     }
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
 
-  // Use fallback if API key is not set or set to placeholder
   if (!apiKey || apiKey === 'your_gemini_api_key_here' || apiKey.trim() === '') {
     console.warn('GEMINI_API_KEY not configured. Returning structured fallback OCR response.');
     const fallback = generateFallbackOCRResult(displayPath);
@@ -185,7 +185,9 @@ export async function processReceiptOCR(relativeOrAbsolutePathOrDataUrl) {
   }
 
   const ai = new GoogleGenAI({ apiKey });
-  const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  
+  // Prioritize gemini-1.5-flash for 1,000,000 TPM high free quota limit, then try gemini-1.5-pro / gemini-2.0-flash
+  const modelsToTry = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
 
   for (const modelName of modelsToTry) {
     try {
@@ -202,7 +204,7 @@ export async function processReceiptOCR(relativeOrAbsolutePathOrDataUrl) {
                 },
               },
               {
-                text: 'Extract all receipt structured data from this Lorry Receipt image adhering strictly to the system rules and JSON schema.',
+                text: 'Carefully read the handwritten text and stamps on this Lorry Receipt (LR). Extract structured fields following the system instructions and JSON schema.',
               },
             ],
           },
@@ -211,7 +213,7 @@ export async function processReceiptOCR(relativeOrAbsolutePathOrDataUrl) {
           systemInstruction: SYSTEM_INSTRUCTION,
           responseMimeType: 'application/json',
           responseSchema: ocrResponseSchema,
-          temperature: 0.1,
+          temperature: 0.05, // Very low temperature for maximum visual accuracy
         },
       });
 
@@ -250,15 +252,14 @@ export async function processReceiptOCR(relativeOrAbsolutePathOrDataUrl) {
       const isQuotaError = err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('quota');
       
       if (isQuotaError && modelName === modelsToTry[modelsToTry.length - 1]) {
-        console.warn('All Gemini API models exhausted quota. Returning graceful structured fallback response.');
-        const fallback = generateFallbackOCRResult(
+        console.warn('All Gemini API models hit quota limits. Returning graceful fallback response.');
+        return generateFallbackOCRResult(
           displayPath,
           'Extracted via Fallback Engine (Gemini API Free Tier Quota Limit Reached — please wait 1 min)'
         );
-        return fallback;
       }
 
-      if (!isQuotaError) {
+      if (!isQuotaError && modelName === modelsToTry[modelsToTry.length - 1]) {
         if (err instanceof AppError) throw err;
         throw new AppError(`OCR extraction failed: ${err.message}`, 502);
       }
