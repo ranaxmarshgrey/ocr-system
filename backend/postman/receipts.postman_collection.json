@@ -1,0 +1,88 @@
+{
+  "info": {
+    "name": "OCR-SUSTEM Receipts API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000/api" },
+    { "key": "receiptId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health"
+      }
+    },
+    {
+      "name": "Create Receipt",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "  pm.collectionVariables.set('receiptId', pm.response.json().data._id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"lrNumber\": \"LR-1001\",\n  \"date\": \"2026-08-01\",\n  \"consignor\": \"ABC Traders\",\n  \"consignee\": \"XYZ Stores\",\n  \"destination\": \"Chennai\",\n  \"articles\": \"10 boxes\",\n  \"description\": \"Electronics goods\",\n  \"invoiceNumber\": \"INV-001\",\n  \"freightType\": \"Paid\",\n  \"acknowledgementStatus\": \"Pending\",\n  \"remarks\": \"Handle with care\",\n  \"enteredBy\": \"operator-1\",\n  \"verificationStatus\": \"Pending\"\n}"
+        },
+        "url": "{{baseUrl}}/receipts"
+      }
+    },
+    {
+      "name": "Create Duplicate LR (warn)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"lrNumber\": \"LR-1001\",\n  \"date\": \"2026-08-02\",\n  \"consignor\": \"Other Traders\",\n  \"consignee\": \"Other Stores\",\n  \"destination\": \"Mumbai\"\n}"
+        },
+        "url": "{{baseUrl}}/receipts"
+      }
+    },
+    {
+      "name": "List Receipts",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/receipts"
+      }
+    },
+    {
+      "name": "Get Receipt by ID",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/receipts/{{receiptId}}"
+      }
+    },
+    {
+      "name": "Update Receipt",
+      "request": {
+        "method": "PUT",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"destination\": \"Bangalore\",\n  \"freightType\": \"To Pay\",\n  \"acknowledgementStatus\": \"Received\"\n}"
+        },
+        "url": "{{baseUrl}}/receipts/{{receiptId}}"
+      }
+    },
+    {
+      "name": "Delete Receipt",
+      "request": {
+        "method": "DELETE",
+        "url": "{{baseUrl}}/receipts/{{receiptId}}"
+      }
+    }
+  ]
+}

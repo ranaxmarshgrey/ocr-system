@@ -1,0 +1,25 @@
+{
+  "name": "ocr-sustem-backend",
+  "version": "1.0.0",
+  "description": "OCR-SUSTEM backend API",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test:receipts": "node scripts/test-receipts.js",
+    "test:upload": "node scripts/test-upload.js",
+    "test:ocr": "node scripts/test-ocr.js",
+    "test:stats": "node scripts/test-stats.js"
+  },
+  "dependencies": {
+    "@google/genai": "^2.15.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mongoose": "^8.9.5",
+    "multer": "^2.2.0",
+    "sharp": "^0.35.3",
+    "zod": "^4.4.3"
+  }
+}

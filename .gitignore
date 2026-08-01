@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Vite
+*.local
+
+# Uploaded images (keep folder structure)
+backend/uploads/raw/*
+backend/uploads/processed/*
+!backend/uploads/raw/.gitkeep
+!backend/uploads/processed/.gitkeep

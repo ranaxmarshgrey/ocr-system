@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: ocr-sustem
+    runtime: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false  # You'll set this manually in the Render dashboard
+      - key: GEMINI_API_KEY
+        sync: false  # You'll set this manually in the Render dashboard
