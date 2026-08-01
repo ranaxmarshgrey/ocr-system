@@ -75,6 +75,13 @@ const icons = {
       <path d="m21 15-5-5L5 21" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
+  download: (
+    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  ),
 };
 
 /* ── Toast Hook ──────────────────────────────────── */
@@ -112,6 +119,54 @@ function getStatusBadgeClass(status) {
 
 function getFreightBadgeClass(type) {
   return type === 'Paid' ? 'badge-paid' : 'badge-topay';
+}
+
+/* ── CSV Export Helper ──────────────────────────── */
+function exportToCSV(receiptsList) {
+  if (!receiptsList || receiptsList.length === 0) return;
+
+  const headers = [
+    'LR Number',
+    'Date',
+    'Consignor (Seller)',
+    'Consignee (Buyer)',
+    'Destination',
+    'Freight Type',
+    'Articles',
+    'Invoice Number',
+    'Description',
+    'Acknowledgement Status',
+    'OCR Confidence (%)',
+    'Remarks',
+    'Created At',
+  ];
+
+  const rows = receiptsList.map((r) => [
+    `"${(r.lrNumber || '').replace(/"/g, '""')}"`,
+    `"${r.date ? new Date(r.date).toISOString().split('T')[0] : ''}"`,
+    `"${(r.consignor || '').replace(/"/g, '""')}"`,
+    `"${(r.consignee || '').replace(/"/g, '""')}"`,
+    `"${(r.destination || '').replace(/"/g, '""')}"`,
+    `"${(r.freightType || '').replace(/"/g, '""')}"`,
+    `"${(r.articles || '').replace(/"/g, '""')}"`,
+    `"${(r.invoiceNumber || '').replace(/"/g, '""')}"`,
+    `"${(r.description || '').replace(/"/g, '""')}"`,
+    `"${(r.acknowledgementStatus || '').replace(/"/g, '""')}"`,
+    `"${r.ocrConfidence ?? ''}"`,
+    `"${(r.remarks || '').replace(/"/g, '""')}"`,
+    `"${r.createdAt ? new Date(r.createdAt).toLocaleString('en-IN') : ''}"`,
+  ]);
+
+  const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', `OCR_Receipts_${new Date().toISOString().split('T')[0]}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 /* ── KPI Card ────────────────────────────────────── */
@@ -402,6 +457,20 @@ export default function Hello() {
             <h1 className="mt-1 text-2xl font-bold tracking-tight">Dashboard</h1>
           </div>
           <div className="flex items-center gap-2">
+            {receipts.length > 0 && (
+              <button
+                onClick={() => {
+                  exportToCSV(receipts);
+                  showToast('Exported receipts to CSV / Excel!', 'success');
+                }}
+                className="btn-secondary text-xs px-3 py-2 flex items-center gap-1.5"
+                title="Export to Excel / CSV"
+                id="btn-export-csv"
+              >
+                {icons.download}
+                <span className="hidden sm:inline">Export Excel</span>
+              </button>
+            )}
             {offlinePending > 0 && (
               <div className="flex items-center gap-1.5 rounded-full bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 animate-slide-down" title={`${offlinePending} receipt(s) waiting to sync`}>
                 <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
