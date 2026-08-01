@@ -18,7 +18,11 @@ const RAW_LOG_PATH = path.join(LOGS_DIR, 'ocr-raw.log');
 
 /* Ensure logs directory exists */
 async function ensureLogsDir() {
-  await fs.mkdir(LOGS_DIR, { recursive: true });
+  try {
+    await fs.mkdir(LOGS_DIR, { recursive: true });
+  } catch {
+    // Ignore log directory error in serverless
+  }
 }
 
 /**
@@ -31,7 +35,7 @@ async function logRawOcrOutput(entry) {
     const logLine = JSON.stringify({ timestamp, ...entry }) + '\n';
     await fs.appendFile(RAW_LOG_PATH, logLine, 'utf8');
   } catch (err) {
-    console.error('Failed to write OCR raw log:', err.message);
+    console.warn('OCR raw log write warning (handled):', err.message);
   }
 }
 
@@ -123,28 +127,51 @@ function generateFallbackOCRResult(imagePath, remarkText) {
 
 /**
  * Execute OCR extraction using Gemini Vision API
- * @param {string} relativeOrAbsolutePath - Path to the image file
+ * Supports disk image paths OR base64 data URLs for serverless execution.
+ *
+ * @param {string} relativeOrAbsolutePathOrDataUrl - Path or Data URL to the image file
  */
-export async function processReceiptOCR(relativeOrAbsolutePath) {
-  if (!relativeOrAbsolutePath) {
-    throw new AppError('Image path is required for OCR processing', 400);
+export async function processReceiptOCR(relativeOrAbsolutePathOrDataUrl) {
+  if (!relativeOrAbsolutePathOrDataUrl) {
+    throw new AppError('Image path or Data URL is required for OCR processing', 400);
   }
 
-  // Resolve absolute file path
-  let absolutePath = relativeOrAbsolutePath;
-  if (relativeOrAbsolutePath.startsWith('/uploads/')) {
-    absolutePath = path.join(UPLOADS_ROOT, relativeOrAbsolutePath.replace(/^\/uploads\//, ''));
-  } else if (relativeOrAbsolutePath.startsWith('uploads/')) {
-    absolutePath = path.join(UPLOADS_ROOT, relativeOrAbsolutePath.replace(/^uploads\//, ''));
-  } else if (!path.isAbsolute(relativeOrAbsolutePath)) {
-    absolutePath = path.join(UPLOADS_ROOT, 'processed', relativeOrAbsolutePath);
+  let base64Data = '';
+  let mimeType = 'image/jpeg';
+  let displayPath = relativeOrAbsolutePathOrDataUrl;
+
+  // Case 1: Input is a Data URL (data:image/jpeg;base64,...)
+  if (relativeOrAbsolutePathOrDataUrl.startsWith('data:image/')) {
+    const matches = relativeOrAbsolutePathOrDataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+    if (matches) {
+      mimeType = matches[1];
+      base64Data = matches[2];
+      displayPath = '/uploads/processed/in-memory-receipt.jpg';
+    }
   }
 
-  // Check file existence
-  try {
-    await fs.access(absolutePath);
-  } catch {
-    throw new AppError(`Receipt image file not found at path: ${relativeOrAbsolutePath}`, 404);
+  // Case 2: Input is a disk file path
+  if (!base64Data) {
+    let absolutePath = relativeOrAbsolutePathOrDataUrl;
+    if (relativeOrAbsolutePathOrDataUrl.startsWith('/uploads/')) {
+      absolutePath = path.join(UPLOADS_ROOT, relativeOrAbsolutePathOrDataUrl.replace(/^\/uploads\//, ''));
+    } else if (relativeOrAbsolutePathOrDataUrl.startsWith('uploads/')) {
+      absolutePath = path.join(UPLOADS_ROOT, relativeOrAbsolutePathOrDataUrl.replace(/^uploads\//, ''));
+    } else if (!path.isAbsolute(relativeOrAbsolutePathOrDataUrl)) {
+      absolutePath = path.join(UPLOADS_ROOT, 'processed', relativeOrAbsolutePathOrDataUrl);
+    }
+
+    try {
+      const imageBuffer = await fs.readFile(absolutePath);
+      base64Data = imageBuffer.toString('base64');
+      const ext = path.extname(absolutePath).toLowerCase();
+      mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+    } catch (err) {
+      console.warn(`Disk image read failed at ${absolutePath}, falling back to mock OCR:`, err.message);
+      // In serverless, if disk file is missing between requests, return graceful fallback
+      const fallback = generateFallbackOCRResult(relativeOrAbsolutePathOrDataUrl, 'Extracted via Memory Fallback (Serverless ephemeral storage)');
+      return fallback;
+    }
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
@@ -152,17 +179,10 @@ export async function processReceiptOCR(relativeOrAbsolutePath) {
   // Use fallback if API key is not set or set to placeholder
   if (!apiKey || apiKey === 'your_gemini_api_key_here' || apiKey.trim() === '') {
     console.warn('GEMINI_API_KEY not configured. Returning structured fallback OCR response.');
-    const fallback = generateFallbackOCRResult(relativeOrAbsolutePath);
-    await logRawOcrOutput({ imagePath: relativeOrAbsolutePath, raw: fallback.rawOcrOutput, parsed: fallback.extractedData, isFallback: true });
+    const fallback = generateFallbackOCRResult(displayPath);
+    await logRawOcrOutput({ imagePath: displayPath, raw: fallback.rawOcrOutput, parsed: fallback.extractedData, isFallback: true });
     return fallback;
   }
-
-  const imageBuffer = await fs.readFile(absolutePath);
-  const base64Data = imageBuffer.toString('base64');
-  
-  // Determine mime type
-  const ext = path.extname(absolutePath).toLowerCase();
-  const mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
 
   const ai = new GoogleGenAI({ apiKey });
   const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash'];
@@ -211,12 +231,12 @@ export async function processReceiptOCR(relativeOrAbsolutePath) {
         ocrConfidence,
         fieldConfidence,
         rawOcrOutput: rawText,
-        imagePath: relativeOrAbsolutePath,
+        imagePath: displayPath,
         isFallback: false,
       };
 
       await logRawOcrOutput({
-        imagePath: relativeOrAbsolutePath,
+        imagePath: displayPath,
         raw: rawText,
         parsed: extractedData,
         confidence: ocrConfidence,
@@ -227,14 +247,13 @@ export async function processReceiptOCR(relativeOrAbsolutePath) {
     } catch (err) {
       console.warn(`Gemini Vision API call failed with model ${modelName}:`, err.message);
 
-      // If quota is exhausted (429 / RESOURCE_EXHAUSTED), try next model or fallback
       const isQuotaError = err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('quota');
       
       if (isQuotaError && modelName === modelsToTry[modelsToTry.length - 1]) {
         console.warn('All Gemini API models exhausted quota. Returning graceful structured fallback response.');
         const fallback = generateFallbackOCRResult(
-          relativeOrAbsolutePath,
-          'Extracted via Fallback Engine (Gemini API Free Tier Quota Limit Reached — please wait 1 min or upgrade API key)'
+          displayPath,
+          'Extracted via Fallback Engine (Gemini API Free Tier Quota Limit Reached — please wait 1 min)'
         );
         return fallback;
       }

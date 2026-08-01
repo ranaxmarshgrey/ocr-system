@@ -250,10 +250,10 @@ export default function CaptureReceipt() {
     try {
       const result = await uploadReceiptImage(file, setStatusMessage, setUploadProgress);
       setUploadResult(result);
-      setProcessedPreview(result.imagePath);
+      setProcessedPreview(result.dataUrl || result.imagePath);
       
-      // Auto-trigger OCR extraction on upload success
-      await triggerOCR(result.imagePath);
+      // Auto-trigger OCR extraction using dataUrl (stateless) or imagePath
+      await triggerOCR(result.dataUrl || result.imagePath);
     } catch (err) {
       setError(err.message);
       setStep(STEPS.error);
