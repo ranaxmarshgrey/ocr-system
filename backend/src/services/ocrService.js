@@ -86,9 +86,9 @@ Extraction Rules:
 9. Provide per-field confidence scores (0 to 100) in fieldConfidence object.`;
 
 /**
- * Fallback parser for testing or when Gemini API key is unconfigured
+ * Fallback parser for testing or when Gemini API key is unconfigured / rate-limited
  */
-function generateFallbackOCRResult(imagePath) {
+function generateFallbackOCRResult(imagePath, remarkText) {
   return {
     extractedData: {
       lrNumber: 'LR-' + Math.floor(100000 + Math.random() * 900000),
@@ -101,19 +101,19 @@ function generateFallbackOCRResult(imagePath) {
       invoiceNumber: 'INV-2026-889',
       freightType: 'Paid',
       acknowledgementStatus: 'Pending',
-      remarks: 'Extracted via Dev Fallback Engine (GEMINI_API_KEY missing/mock mode)',
+      remarks: remarkText || 'Extracted via Dev Fallback Engine (GEMINI_API_KEY missing/mock mode)',
     },
-    ocrConfidence: 88,
+    ocrConfidence: 85,
     fieldConfidence: {
-      lrNumber: 95,
+      lrNumber: 90,
       date: 90,
-      consignor: 85,
-      consignee: 85,
-      destination: 92,
-      articles: 80,
-      description: 80,
-      invoiceNumber: 88,
-      freightType: 95,
+      consignor: 80,
+      consignee: 80,
+      destination: 85,
+      articles: 75,
+      description: 75,
+      invoiceNumber: 80,
+      freightType: 90,
     },
     rawOcrOutput: 'Simulated OCR output fallback',
     imagePath,
@@ -157,86 +157,92 @@ export async function processReceiptOCR(relativeOrAbsolutePath) {
     return fallback;
   }
 
-  try {
-    const imageBuffer = await fs.readFile(absolutePath);
-    const base64Data = imageBuffer.toString('base64');
-    
-    // Determine mime type
-    const ext = path.extname(absolutePath).toLowerCase();
-    const mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+  const imageBuffer = await fs.readFile(absolutePath);
+  const base64Data = imageBuffer.toString('base64');
+  
+  // Determine mime type
+  const ext = path.extname(absolutePath).toLowerCase();
+  const mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
 
-    const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey });
+  const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash'];
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              inlineData: {
-                data: base64Data,
-                mimeType,
-              },
-            },
-            {
-              text: 'Extract all receipt structured data from this Lorry Receipt image adhering strictly to the system rules and JSON schema.',
-            },
-          ],
-        },
-      ],
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: 'application/json',
-        responseSchema: ocrResponseSchema,
-        temperature: 0.1, // Low temperature for high accuracy & low hallucination
-      },
-    });
-
-    const rawText = response.text || '';
-    let parsed;
-
+  for (const modelName of modelsToTry) {
     try {
-      parsed = JSON.parse(rawText);
-    } catch {
-      throw new AppError('Failed to parse Gemini OCR JSON response', 502);
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  data: base64Data,
+                  mimeType,
+                },
+              },
+              {
+                text: 'Extract all receipt structured data from this Lorry Receipt image adhering strictly to the system rules and JSON schema.',
+              },
+            ],
+          },
+        ],
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION,
+          responseMimeType: 'application/json',
+          responseSchema: ocrResponseSchema,
+          temperature: 0.1,
+        },
+      });
+
+      const rawText = response.text || '';
+      let parsed;
+
+      try {
+        parsed = JSON.parse(rawText);
+      } catch {
+        throw new AppError('Failed to parse Gemini OCR JSON response', 502);
+      }
+
+      const { ocrConfidence = 85, fieldConfidence = {}, ...extractedData } = parsed;
+
+      const result = {
+        extractedData,
+        ocrConfidence,
+        fieldConfidence,
+        rawOcrOutput: rawText,
+        imagePath: relativeOrAbsolutePath,
+        isFallback: false,
+      };
+
+      await logRawOcrOutput({
+        imagePath: relativeOrAbsolutePath,
+        raw: rawText,
+        parsed: extractedData,
+        confidence: ocrConfidence,
+        isFallback: false,
+      });
+
+      return result;
+    } catch (err) {
+      console.warn(`Gemini Vision API call failed with model ${modelName}:`, err.message);
+
+      // If quota is exhausted (429 / RESOURCE_EXHAUSTED), try next model or fallback
+      const isQuotaError = err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('quota');
+      
+      if (isQuotaError && modelName === modelsToTry[modelsToTry.length - 1]) {
+        console.warn('All Gemini API models exhausted quota. Returning graceful structured fallback response.');
+        const fallback = generateFallbackOCRResult(
+          relativeOrAbsolutePath,
+          'Extracted via Fallback Engine (Gemini API Free Tier Quota Limit Reached — please wait 1 min or upgrade API key)'
+        );
+        return fallback;
+      }
+
+      if (!isQuotaError) {
+        if (err instanceof AppError) throw err;
+        throw new AppError(`OCR extraction failed: ${err.message}`, 502);
+      }
     }
-
-    const { ocrConfidence = 85, fieldConfidence = {}, ...extractedData } = parsed;
-
-    const result = {
-      extractedData,
-      ocrConfidence,
-      fieldConfidence,
-      rawOcrOutput: rawText,
-      imagePath: relativeOrAbsolutePath,
-      isFallback: false,
-    };
-
-    // Log raw & parsed output for debugging & fine tuning
-    await logRawOcrOutput({
-      imagePath: relativeOrAbsolutePath,
-      raw: rawText,
-      parsed: extractedData,
-      confidence: ocrConfidence,
-      isFallback: false,
-    });
-
-    return result;
-  } catch (err) {
-    console.error('Gemini OCR Vision Error:', err.message);
-
-    // If it's an AppError, rethrow
-    if (err instanceof AppError) throw err;
-
-    // Log failure
-    await logRawOcrOutput({
-      imagePath: relativeOrAbsolutePath,
-      error: err.message,
-      failed: true,
-    });
-
-    // Provide friendly error message for API failure
-    throw new AppError(`OCR extraction failed: ${err.message}. Please try again or inspect image.`, 502);
   }
 }
