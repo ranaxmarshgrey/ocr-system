@@ -1,11 +1,17 @@
 import sharp from 'sharp';
 import fs from 'fs/promises';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOADS_ROOT = path.join(__dirname, '../../uploads');
+
+/* On serverless (Vercel), only /tmp is writable */
+const UPLOADS_ROOT = (process.env.VERCEL || process.env.NODE_ENV === 'production')
+  ? path.join(os.tmpdir(), 'uploads')
+  : path.join(__dirname, '../../uploads');
+
 const RAW_DIR = path.join(UPLOADS_ROOT, 'raw');
 const PROCESSED_DIR = path.join(UPLOADS_ROOT, 'processed');
 

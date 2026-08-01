@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import routes from './routes/index.js';
 import { notFound } from './middlewares/notFound.js';
@@ -13,7 +14,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+const UPLOADS_DIR = (process.env.VERCEL || process.env.NODE_ENV === 'production')
+  ? path.join(os.tmpdir(), 'uploads')
+  : path.join(__dirname, '../uploads');
+
+app.use('/uploads', express.static(UPLOADS_DIR));
 app.use('/api', routes);
 
 /* ── Serve frontend in production ─────────────────────── */

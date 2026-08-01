@@ -1,12 +1,19 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import fs from 'fs/promises';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { AppError } from '../utils/AppError.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOADS_ROOT = path.join(__dirname, '../../uploads');
-const LOGS_DIR = path.join(__dirname, '../../logs');
+const UPLOADS_ROOT = (process.env.VERCEL || process.env.NODE_ENV === 'production')
+  ? path.join(os.tmpdir(), 'uploads')
+  : path.join(__dirname, '../../uploads');
+
+const LOGS_DIR = (process.env.VERCEL || process.env.NODE_ENV === 'production')
+  ? path.join(os.tmpdir(), 'logs')
+  : path.join(__dirname, '../../logs');
+
 const RAW_LOG_PATH = path.join(LOGS_DIR, 'ocr-raw.log');
 
 /* Ensure logs directory exists */
@@ -161,7 +168,7 @@ export async function processReceiptOCR(relativeOrAbsolutePath) {
     const ai = new GoogleGenAI({ apiKey });
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       contents: [
         {
           role: 'user',
