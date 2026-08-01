@@ -61,8 +61,9 @@ export async function processReceiptImage(buffer, originalName) {
   }
 
   const finalJpegBuffer = await sharp(processedBuffer)
+    .resize({ width: 1280, height: 1280, fit: 'inside', withoutEnlargement: true })
     .normalize()
-    .jpeg({ quality: 85, mozjpeg: true })
+    .jpeg({ quality: 80, mozjpeg: true })
     .toBuffer();
 
   // Attempt writing processed image to disk if filesystem allows

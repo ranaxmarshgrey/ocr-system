@@ -12,7 +12,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 const UPLOADS_DIR = (process.env.VERCEL || process.env.NODE_ENV === 'production')
   ? path.join(os.tmpdir(), 'uploads')
@@ -27,7 +28,6 @@ app.use(express.static(frontendDist));
 
 // SPA catch-all: any non-API route serves index.html for client-side routing
 app.get('*', (req, res, next) => {
-  // Don't catch API routes — let them fall through to 404 handler
   if (req.path.startsWith('/api')) return next();
   res.sendFile(path.join(frontendDist, 'index.html'));
 });
