@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { fetchSuggestions } from '../api/receipts';
 
 const CONFIDENCE_THRESHOLD = 75;
 
@@ -34,6 +35,61 @@ const SaveIcon = () => (
   </svg>
 );
 
+/* Autocomplete Dropdown Component for Consignor, Consignee & Destination */
+function AutocompleteInput({ id, field, value, onChange, placeholder, className, error }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const handleInputChange = async (e) => {
+    const val = e.target.value;
+    onChange(val);
+
+    if (val.trim().length >= 1) {
+      const matches = await fetchSuggestions(field, val);
+      setSuggestions(matches);
+      setShowDropdown(matches.length > 0);
+    } else {
+      setSuggestions([]);
+      setShowDropdown(false);
+    }
+  };
+
+  const handleSelect = (item) => {
+    onChange(item);
+    setShowDropdown(false);
+  };
+
+  return (
+    <div className="relative w-full">
+      <input
+        id={id}
+        type="text"
+        value={value}
+        onChange={handleInputChange}
+        onFocus={handleInputChange}
+        onBlur={() => setTimeout(() => setShowDropdown(false), 250)}
+        placeholder={placeholder}
+        className={className}
+        autoComplete="off"
+      />
+      {showDropdown && suggestions.length > 0 && (
+        <ul className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-xl bg-slate-900 border border-emerald-500/40 shadow-2xl shadow-black">
+          {suggestions.map((item, idx) => (
+            <li
+              key={idx}
+              onMouseDown={() => handleSelect(item)}
+              className="px-3.5 py-2.5 text-xs text-slate-200 hover:bg-emerald-500/20 hover:text-emerald-300 cursor-pointer transition flex items-center justify-between border-b border-white/5 last:border-0"
+            >
+              <span>{item}</span>
+              <span className="text-[0.65rem] text-emerald-400/80 font-mono font-semibold">Suggested</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function VerificationForm({
   ocrData = {},
   fieldConfidence = {},
@@ -48,6 +104,7 @@ export default function VerificationForm({
   const [formData, setFormData] = useState({
     lrNumber: ocrData.lrNumber || '',
     route: ocrData.route || 'MALUR-MASTHI',
+    ewayBillNumber: ocrData.ewayBillNumber || '',
     date: ocrData.date || todayStr,
     consignor: ocrData.consignor || '',
     consignee: ocrData.consignee || '',
@@ -91,6 +148,10 @@ export default function VerificationForm({
     if (!formData.consignee.trim()) errors.consignee = 'Consignee (Buyer) is required';
     if (!formData.destination.trim()) errors.destination = 'Destination is required';
 
+    if (formData.ewayBillNumber && formData.ewayBillNumber.trim() && !/^\d{12}$/.test(formData.ewayBillNumber.trim())) {
+      errors.ewayBillNumber = 'E-Way Bill Number must be exactly 12 digits';
+    }
+
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   }
@@ -114,9 +175,9 @@ export default function VerificationForm({
       <div className="glass rounded-2xl p-5 space-y-4 border-emerald-500/20">
         <div className="flex items-center justify-between border-b border-white/5 pb-3">
           <div>
-            <h2 className="text-base font-bold text-slate-100">Verify Receipt Information</h2>
+            <h2 className="text-base font-bold text-slate-100">Digital LR Entry & Verification</h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Review and edit extracted fields before saving to database.
+              Type to see auto-suggestions for repeat Sellers & Buyers.
             </p>
           </div>
           <div className="text-right">
@@ -193,6 +254,36 @@ export default function VerificationForm({
             )}
           </div>
 
+          {/* 12-Digit E-Way Bill Number */}
+          <div className="space-y-1">
+            <div className="flex justify-between items-center text-xs">
+              <label htmlFor="ewayBillNumber" className="font-semibold text-slate-300">
+                E-Way Bill Number (12 Digits)
+              </label>
+              {formData.ewayBillNumber && /^\d{12}$/.test(formData.ewayBillNumber.trim()) && (
+                <span className="flex items-center gap-1 text-[0.65rem] text-emerald-400">
+                  <CheckIcon /> 12 Digits
+                </span>
+              )}
+            </div>
+            <input
+              id="ewayBillNumber"
+              type="text"
+              maxLength={12}
+              value={formData.ewayBillNumber}
+              onChange={(e) => handleChange('ewayBillNumber', e.target.value.replace(/\D/g, ''))}
+              placeholder="e.g. 123456789012"
+              className={`w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm text-slate-100 border font-mono transition focus:outline-none ${
+                formErrors.ewayBillNumber
+                  ? 'border-red-500/80 bg-red-950/20'
+                  : 'border-white/10 focus:border-emerald-500/60'
+              }`}
+            />
+            {formErrors.ewayBillNumber && (
+              <p className="text-[0.7rem] text-red-400">{formErrors.ewayBillNumber}</p>
+            )}
+          </div>
+
           {/* Date */}
           <div className="space-y-1">
             <div className="flex justify-between items-center text-xs">
@@ -225,7 +316,7 @@ export default function VerificationForm({
             {formErrors.date && <p className="text-[0.7rem] text-red-400">{formErrors.date}</p>}
           </div>
 
-          {/* Consignor (Seller) */}
+          {/* Consignor (Seller) with Autocomplete */}
           <div className="space-y-1 col-span-1 md:col-span-2">
             <div className="flex justify-between items-center text-xs">
               <label htmlFor="consignor" className="font-semibold text-slate-300">
@@ -241,12 +332,12 @@ export default function VerificationForm({
                 </span>
               )}
             </div>
-            <input
+            <AutocompleteInput
               id="consignor"
-              type="text"
+              field="consignor"
               value={formData.consignor}
-              onChange={(e) => handleChange('consignor', e.target.value)}
-              placeholder="Seller company name"
+              onChange={(val) => handleChange('consignor', val)}
+              placeholder="Type seller name (shows suggestions)..."
               className={`w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm text-slate-100 border transition focus:outline-none ${
                 formErrors.consignor
                   ? 'border-red-500/80 bg-red-950/20'
@@ -260,7 +351,7 @@ export default function VerificationForm({
             )}
           </div>
 
-          {/* Consignee (Buyer) */}
+          {/* Consignee (Buyer) with Autocomplete */}
           <div className="space-y-1 col-span-1 md:col-span-2">
             <div className="flex justify-between items-center text-xs">
               <label htmlFor="consignee" className="font-semibold text-slate-300">
@@ -276,12 +367,12 @@ export default function VerificationForm({
                 </span>
               )}
             </div>
-            <input
+            <AutocompleteInput
               id="consignee"
-              type="text"
+              field="consignee"
               value={formData.consignee}
-              onChange={(e) => handleChange('consignee', e.target.value)}
-              placeholder="Buyer company name"
+              onChange={(val) => handleChange('consignee', val)}
+              placeholder="Type buyer name (shows suggestions)..."
               className={`w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm text-slate-100 border transition focus:outline-none ${
                 formErrors.consignee
                   ? 'border-red-500/80 bg-red-950/20'
@@ -295,7 +386,7 @@ export default function VerificationForm({
             )}
           </div>
 
-          {/* Destination */}
+          {/* Destination with Autocomplete */}
           <div className="space-y-1">
             <div className="flex justify-between items-center text-xs">
               <label htmlFor="destination" className="font-semibold text-slate-300">
@@ -311,12 +402,12 @@ export default function VerificationForm({
                 </span>
               )}
             </div>
-            <input
+            <AutocompleteInput
               id="destination"
-              type="text"
+              field="destination"
               value={formData.destination}
-              onChange={(e) => handleChange('destination', e.target.value)}
-              placeholder="Destination city / location"
+              onChange={(val) => handleChange('destination', val)}
+              placeholder="Destination city (shows suggestions)..."
               className={`w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm text-slate-100 border transition focus:outline-none ${
                 formErrors.destination
                   ? 'border-red-500/80 bg-red-950/20'
@@ -432,7 +523,7 @@ export default function VerificationForm({
           className="btn-secondary w-full"
           id="btn-retake-photo"
         >
-          <RefreshIcon /> Retake Photo
+          <RefreshIcon /> Reset / Change Photo
         </button>
         <button
           type="submit"
@@ -444,7 +535,7 @@ export default function VerificationForm({
             <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
           ) : (
             <>
-              <SaveIcon /> Save Receipt
+              <SaveIcon /> Save Digital Receipt
             </>
           )}
         </button>

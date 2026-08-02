@@ -28,6 +28,7 @@ export async function getAllReceipts(params = {}) {
     const regex = new RegExp(searchQuery.trim(), 'i');
     filter.$or = [
       { lrNumber: regex },
+      { ewayBillNumber: regex },
       { invoiceNumber: regex },
       { consignor: regex },
       { consignee: regex },
@@ -139,3 +140,24 @@ export async function getDashboardStats(params = {}) {
     uniqueDestinations: destinations.filter(Boolean),
   };
 }
+
+/**
+ * Fetch distinct suggestions for autocomplete fields (consignor, consignee, destination, etc.)
+ */
+export async function getSuggestions(field = 'consignor', query = '') {
+  const allowedFields = ['consignor', 'consignee', 'destination', 'articles', 'description'];
+  if (!allowedFields.includes(field)) {
+    return [];
+  }
+
+  const filter = {};
+  if (query && query.trim()) {
+    filter[field] = new RegExp(query.trim(), 'i');
+  }
+
+  const results = await Receipt.distinct(field, filter);
+  return results
+    .filter((val) => typeof val === 'string' && val.trim().length > 0)
+    .slice(0, 10);
+}
+

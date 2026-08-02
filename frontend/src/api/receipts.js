@@ -144,3 +144,21 @@ export async function updateReceiptStatus(id, updateData) {
 
   return body.data;
 }
+
+/**
+ * Fetch autocomplete suggestions for consignor, consignee, destination, etc.
+ * @param {string} field - 'consignor' | 'consignee' | 'destination'
+ * @param {string} q - typed query string
+ * @returns {Promise<Array<string>>}
+ */
+export async function fetchSuggestions(field = 'consignor', q = '') {
+  try {
+    const url = `/api/receipts/suggestions?field=${encodeURIComponent(field)}&q=${encodeURIComponent(q)}`;
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    const body = await response.json();
+    return body.data || [];
+  } catch {
+    return [];
+  }
+}

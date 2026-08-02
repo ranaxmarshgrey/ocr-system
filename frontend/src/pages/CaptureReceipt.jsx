@@ -476,6 +476,20 @@ export default function CaptureReceipt() {
               </button>
             </div>
 
+            {/* Direct Digital Entry shortcut */}
+            <button
+              type="button"
+              onClick={() => {
+                setUploadResult({ imagePath: '' });
+                setOcrResult(null);
+                setStep(STEPS.done);
+              }}
+              className="w-full py-3 px-4 rounded-xl bg-slate-900 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition hover:bg-emerald-500/10 flex items-center justify-center gap-2"
+              id="btn-direct-digital-entry"
+            >
+              ✍️ Direct Digital Entry (Fast Manual & Autocomplete)
+            </button>
+
             {error && (
               <div className="animate-slide-up rounded-xl border border-red-500/20 bg-red-950/30 p-4">
                 <div className="flex items-start gap-3">

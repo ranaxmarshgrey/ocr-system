@@ -7,6 +7,7 @@ import {
   deleteReceipt,
   processOCR,
   getDashboardStats,
+  getSuggestions,
 } from '../controllers/receiptController.js';
 import { validate } from '../middlewares/validate.js';
 import {
@@ -17,6 +18,7 @@ import {
 const router = Router();
 
 router.get('/stats', getDashboardStats);
+router.get('/suggestions', getSuggestions);
 router.post('/ocr', processOCR);
 router.post('/', validate(createReceiptSchema), createReceipt);
 router.get('/', getReceipts);

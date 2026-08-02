@@ -127,6 +127,8 @@ function exportToCSV(receiptsList) {
 
   const headers = [
     'LR Number',
+    'Route',
+    'E-Way Bill No.',
     'Date',
     'Consignor (Seller)',
     'Consignee (Buyer)',
@@ -144,6 +146,7 @@ function exportToCSV(receiptsList) {
   const rows = receiptsList.map((r) => [
     `"${(r.lrNumber || '').replace(/"/g, '""')}"`,
     `"${(r.route || 'MALUR-MASTHI').replace(/"/g, '""')}"`,
+    `"${(r.ewayBillNumber || '').replace(/"/g, '""')}"`,
     `"${r.date ? new Date(r.date).toISOString().split('T')[0] : ''}"`,
     `"${(r.consignor || '').replace(/"/g, '""')}"`,
     `"${(r.consignee || '').replace(/"/g, '""')}"`,
@@ -244,6 +247,7 @@ function ReceiptModal({ receipt, onClose, onStatusUpdate }) {
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
             {[
               ['Date', formatDate(receipt.date)],
+              ['E-Way Bill No.', receipt.ewayBillNumber || '—'],
               ['Destination', receipt.destination],
               ['Consignor (Seller)', receipt.consignor],
               ['Consignee (Buyer)', receipt.consignee],
@@ -777,14 +781,19 @@ export default function Hello() {
                   </div>
                 </div>
 
-                {/* Date row */}
-                <div className="mt-2 pt-2 border-t border-slate-800/50 flex items-center justify-between text-xs text-slate-600">
+                {/* Date & ewaybill row */}
+                <div className="mt-2 pt-2 border-t border-slate-800/50 flex items-center justify-between text-xs text-slate-600 flex-wrap gap-1">
                   <span className="flex items-center gap-1">
                     {icons.calendar} {formatDate(r.date)}
                   </span>
-                  {r.invoiceNumber && (
-                    <span>Inv: {r.invoiceNumber}</span>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {r.ewayBillNumber && (
+                      <span className="font-mono text-emerald-400/90 font-semibold">E-Way: {r.ewayBillNumber}</span>
+                    )}
+                    {r.invoiceNumber && (
+                      <span>Inv: {r.invoiceNumber}</span>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

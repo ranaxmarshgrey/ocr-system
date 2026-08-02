@@ -33,6 +33,15 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
   });
 });
 
+export const getSuggestions = asyncHandler(async (req, res) => {
+  const { field, q } = req.query;
+  const suggestions = await receiptService.getSuggestions(field, q);
+  res.json({
+    status: 'success',
+    data: suggestions,
+  });
+});
+
 export const getReceiptById = asyncHandler(async (req, res) => {
   const receipt = await receiptService.getReceiptById(req.params.id);
   res.json({

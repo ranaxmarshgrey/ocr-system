@@ -20,6 +20,12 @@ const receiptSchema = new mongoose.Schema(
       default: 'MALUR-MASTHI',
       index: true,
     },
+    ewayBillNumber: {
+      type: String,
+      trim: true,
+      default: '',
+      index: true,
+    },
     date: {
       type: Date,
       required: true,
