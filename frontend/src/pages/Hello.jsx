@@ -1,8 +1,10 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import VerificationForm from '../components/VerificationForm';
 import {
   getDashboardStats,
   queryReceipts,
+  updateReceipt,
   updateReceiptStatus,
 } from '../api/receipts';
 import {
@@ -189,7 +191,7 @@ function KPICard({ label, value, accent, icon, delay }) {
 }
 
 /* ── Receipt Detail Modal ────────────────────────── */
-function ReceiptModal({ receipt, onClose, onStatusUpdate }) {
+function ReceiptModal({ receipt, onClose, onStatusUpdate, onEditStart, onEditSave, isSavingEdit, editMode }) {
   if (!receipt) return null;
 
   return (
@@ -263,23 +265,51 @@ function ReceiptModal({ receipt, onClose, onStatusUpdate }) {
             ))}
           </dl>
 
-          {/* Actions */}
-          {receipt.acknowledgementStatus === 'Pending' && (
-            <div className="pt-3 border-t border-slate-800 flex gap-2">
-              <button
-                className="btn-action action-receive flex-1"
-                onClick={() => onStatusUpdate(receipt._id, 'Received')}
-              >
-                {icons.check} Mark Received
-              </button>
-              <button
-                className="btn-action flex-1"
-                style={{ background: 'rgba(148, 163, 184, 0.1)', color: '#94a3b8' }}
-                onClick={() => onStatusUpdate(receipt._id, 'Later')}
-              >
-                {icons.clock} Mark Later
-              </button>
+          {editMode ? (
+            <div className="pt-3 border-t border-slate-800">
+              <VerificationForm
+                ocrData={receipt}
+                imagePath={receipt.imagePath || ''}
+                ocrConfidence={receipt.ocrConfidence || 95}
+                initialRoute={receipt.route || 'MALUR-MASTHI'}
+                initialDate={receipt.date ? new Date(receipt.date).toISOString().split('T')[0] : ''}
+                onSave={onEditSave}
+                onRetake={onClose}
+                onCancel={onClose}
+                isSubmitting={isSavingEdit}
+                showContinueButton={false}
+                cancelLabel="Cancel"
+                saveButtonLabel="Save Changes"
+                saveNextButtonLabel="Save Changes"
+              />
             </div>
+          ) : (
+            <>
+              <div className="pt-3 border-t border-slate-800 flex gap-2">
+                <button
+                  className="btn-action action-receive flex-1"
+                  onClick={() => onStatusUpdate(receipt._id, 'Received')}
+                >
+                  {icons.check} Mark Received
+                </button>
+                <button
+                  className="btn-action flex-1"
+                  style={{ background: 'rgba(148, 163, 184, 0.1)', color: '#94a3b8' }}
+                  onClick={() => onStatusUpdate(receipt._id, 'Later')}
+                >
+                  {icons.clock} Mark Later
+                </button>
+              </div>
+              <div className="pt-3 border-t border-slate-800 flex gap-2">
+                <button
+                  className="btn-action flex-1"
+                  style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.25)' }}
+                  onClick={() => onEditStart(receipt)}
+                >
+                  ✏️ Edit Entry
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -326,9 +356,12 @@ export default function Hello() {
   const [destination, setDestination] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
 
   // Modal
   const [selectedReceipt, setSelectedReceipt] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Offline queue
   const [offlinePending, setOfflinePending] = useState(0);
@@ -430,11 +463,35 @@ export default function Hello() {
       await updateReceiptStatus(id, { acknowledgementStatus: newStatus });
       showToast(`Receipt marked as ${newStatus}`, 'success');
       setSelectedReceipt(null);
+      setEditMode(false);
       // Refresh
       fetchStats();
       fetchReceipts();
     } catch (err) {
       showToast(err.message, 'error');
+    }
+  };
+
+  const handleEditStart = (receipt) => {
+    setSelectedReceipt(receipt);
+    setEditMode(true);
+  };
+
+  const handleEditSave = async (payload) => {
+    if (!selectedReceipt?._id) return;
+
+    setIsSavingEdit(true);
+    try {
+      await updateReceipt(selectedReceipt._id, payload);
+      showToast('Receipt updated successfully', 'success');
+      setEditMode(false);
+      setSelectedReceipt(null);
+      fetchStats();
+      fetchReceipts();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -445,6 +502,29 @@ export default function Hello() {
     fetchStats();
     fetchReceipts();
   };
+
+  const handleDateSelect = (dateValue) => {
+    setSelectedDate(dateValue);
+    setStartDate(dateValue);
+    setEndDate(dateValue);
+  };
+
+  const handleShowAllDates = () => {
+    setSelectedDate('');
+    setStartDate('');
+    setEndDate('');
+  };
+
+  const dateGroups = useMemo(() => {
+    return receipts.reduce((groups, receipt) => {
+      const key = receipt.date ? receipt.date.split('T')[0] : 'unknown';
+      if (!groups[key]) {
+        groups[key] = { date: key, count: 0 };
+      }
+      groups[key].count += 1;
+      return groups;
+    }, {});
+  }, [receipts]);
 
   const statusTabs = ['All', 'Pending', 'Received', 'Later'];
   const freightTabs = ['All', 'Paid', 'To Pay'];
@@ -559,12 +639,73 @@ export default function Hello() {
           </div>
         )}
 
+        {/* ── Daily Entries Overview ───────────────── */}
+        <div className="mb-5 animate-slide-up delay-100">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.24em] text-slate-500">Daily entries</p>
+              <p className="text-sm text-slate-300">Open a date to review or add receipts</p>
+            </div>
+            <button
+              onClick={handleShowAllDates}
+              className="text-xs font-semibold text-emerald-400"
+            >
+              {selectedDate ? 'Show all dates' : 'All dates'}
+            </button>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {Object.values(dateGroups).sort((a, b) => b.date.localeCompare(a.date)).map((entry) => (
+              <button
+                key={entry.date}
+                type="button"
+                onClick={() => handleDateSelect(entry.date)}
+                className={`rounded-2xl border px-4 py-3 text-left transition ${
+                  selectedDate === entry.date
+                    ? 'border-emerald-500 bg-emerald-500/15 text-emerald-300'
+                    : 'border-white/10 bg-slate-900/70 text-slate-300 hover:border-emerald-500/40 hover:text-slate-100'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold">{formatDate(entry.date)}</span>
+                  <span className="rounded-full bg-slate-800/80 px-2 py-0.5 text-[0.65rem] font-semibold">
+                    {entry.count} {entry.count === 1 ? 'entry' : 'entries'}
+                  </span>
+                </div>
+                <p className="mt-1 text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">{entry.date}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {selectedDate && (
+          <div className="mb-4 rounded-2xl border border-white/10 bg-slate-900/70 p-4 animate-slide-up delay-150">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.24em] text-slate-500">Selected date</p>
+                <p className="text-base font-semibold text-slate-100">{formatDate(selectedDate)}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={handleShowAllDates}
+                  className="btn-secondary text-xs"
+                >
+                  Back to dates
+                </button>
+                <Link to="/capture" className="btn-primary text-xs">
+                  {icons.plus} Add Receipt
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── Search Bar ───────────────────────────── */}
-        <div className="search-container mb-4 animate-slide-up delay-100" id="search-bar">
+        <div className="search-container mb-4 animate-slide-up delay-200" id="search-bar">
           <span className="search-icon">{icons.search}</span>
           <input
             type="text"
-            placeholder="Search LR Number, Invoice, Seller, Buyer, Destination..."
+            placeholder="Search by LR Number"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             id="search-input"
@@ -572,37 +713,7 @@ export default function Hello() {
         </div>
 
         {/* ── Filter Bar ──────────────────────────── */}
-        <div className="flex flex-wrap gap-3 mb-4 animate-slide-up delay-200">
-          {/* Quick Date Shortcuts for Daily Cross-Checking */}
-          <div className="filter-tabs">
-            <button
-              className={`filter-tab ${!startDate && !endDate ? 'active' : ''}`}
-              onClick={() => { setStartDate(''); setEndDate(''); }}
-            >
-              All Dates
-            </button>
-            <button
-              className={`filter-tab ${startDate === new Date().toISOString().split('T')[0] && endDate === new Date().toISOString().split('T')[0] ? 'active' : ''}`}
-              onClick={() => {
-                const today = new Date().toISOString().split('T')[0];
-                setStartDate(today);
-                setEndDate(today);
-              }}
-            >
-              Today
-            </button>
-            <button
-              className={`filter-tab ${startDate === new Date(Date.now() - 86400000).toISOString().split('T')[0] && endDate === new Date(Date.now() - 86400000).toISOString().split('T')[0] ? 'active' : ''}`}
-              onClick={() => {
-                const yest = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-                setStartDate(yest);
-                setEndDate(yest);
-              }}
-            >
-              Yesterday
-            </button>
-          </div>
-
+        <div className="flex flex-wrap gap-3 mb-4 animate-slide-up delay-250">
           {/* Status tabs */}
           <div className="filter-tabs">
             {statusTabs.map((tab) => (
@@ -669,7 +780,13 @@ export default function Hello() {
 
         {/* ── Results count ────────────────────────── */}
         <div className="flex items-center justify-between mb-3 text-sm text-slate-500 animate-fade-in delay-300">
-          <p>{receiptsLoading ? 'Loading…' : `${receipts.length} receipt${receipts.length !== 1 ? 's' : ''}`}</p>
+          <p>
+            {receiptsLoading
+              ? 'Loading…'
+              : selectedDate
+                ? `${receipts.length} receipt${receipts.length !== 1 ? 's' : ''} for ${formatDate(selectedDate)}`
+                : `${receipts.length} receipt${receipts.length !== 1 ? 's' : ''} across selected dates`}
+          </p>
           {(search || statusFilter !== 'All' || freightFilter !== 'All' || destination || startDate || endDate) && (
             <button
               className="text-emerald-400 hover:text-emerald-300 text-xs font-medium"
@@ -697,12 +814,14 @@ export default function Hello() {
             <p className="text-slate-400 font-medium">No receipts found</p>
             <p className="text-sm text-slate-600 mt-1">
               {search || statusFilter !== 'All'
-                ? 'Try adjusting your search or filters'
-                : 'Capture your first receipt to get started'}
+                ? 'Try adjusting the LR number search or filters'
+                : selectedDate
+                  ? 'No entries exist for this day yet'
+                  : 'Select a date to review entries'}
             </p>
             {!search && statusFilter === 'All' && (
               <Link to="/capture" className="btn-primary mt-4">
-                {icons.plus} Capture Receipt
+                {icons.plus} Add Receipt
               </Link>
             )}
           </div>
@@ -805,8 +924,15 @@ export default function Hello() {
       {selectedReceipt && (
         <ReceiptModal
           receipt={selectedReceipt}
-          onClose={() => setSelectedReceipt(null)}
+          onClose={() => {
+            setSelectedReceipt(null);
+            setEditMode(false);
+          }}
           onStatusUpdate={handleStatusUpdate}
+          onEditStart={handleEditStart}
+          onEditSave={handleEditSave}
+          isSavingEdit={isSavingEdit}
+          editMode={editMode}
         />
       )}
 
