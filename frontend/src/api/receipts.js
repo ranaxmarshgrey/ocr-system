@@ -129,7 +129,7 @@ export async function queryReceipts(params = {}) {
  * @param {object} updateData - { acknowledgementStatus, receivedBy?, remarks? }
  * @returns {Promise<object>} updated receipt
  */
-export async function updateReceiptStatus(id, updateData) {
+export async function updateReceipt(id, updateData) {
   const response = await fetch(`/api/receipts/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -139,10 +139,14 @@ export async function updateReceiptStatus(id, updateData) {
   const body = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(body?.message || 'Failed to update receipt status');
+    throw new Error(body?.message || 'Failed to update receipt');
   }
 
   return body.data;
+}
+
+export async function updateReceiptStatus(id, updateData) {
+  return updateReceipt(id, updateData);
 }
 
 /**

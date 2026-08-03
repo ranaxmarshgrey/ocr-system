@@ -99,7 +99,12 @@ export default function VerificationForm({
   initialDate = '',
   onSave,
   onRetake,
+  onCancel,
   isSubmitting = false,
+  showContinueButton = true,
+  cancelLabel = 'Reset / Change Photo',
+  saveButtonLabel = 'Save Receipt',
+  saveNextButtonLabel = 'Save & Add Next',
 }) {
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -114,7 +119,7 @@ export default function VerificationForm({
     articles: ocrData.articles || '',
     description: ocrData.description || '',
     invoiceNumber: ocrData.invoiceNumber || '',
-    freightType: ocrData.freightType === 'To Pay' ? 'To Pay' : 'Paid',
+    freightType: ocrData.freightType === 'Paid' ? 'Paid' : 'To Pay',
     acknowledgementStatus: ocrData.acknowledgementStatus || 'Pending',
     remarks: ocrData.remarks || '',
     enteredBy: 'Dispatcher',
@@ -535,14 +540,14 @@ export default function VerificationForm({
       <div className="grid grid-cols-1 gap-3 pt-2">
         <button
           type="button"
-          onClick={onRetake}
+          onClick={onCancel || onRetake}
           disabled={isSubmitting}
           className="btn-secondary w-full"
           id="btn-retake-photo"
         >
-          <RefreshIcon /> Reset / Change Photo
+          <RefreshIcon /> {cancelLabel}
         </button>
-        <div className="grid grid-cols-2 gap-3">
+        <div className={`grid gap-3 ${showContinueButton ? 'grid-cols-2' : 'grid-cols-1'}`}>
           <button
             type="submit"
             disabled={isSubmitting}
@@ -553,25 +558,27 @@ export default function VerificationForm({
               <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
             ) : (
               <>
-                <SaveIcon /> Save Receipt
+                <SaveIcon /> {saveButtonLabel}
               </>
             )}
           </button>
-          <button
-            type="button"
-            disabled={isSubmitting}
-            onClick={() => submitForm('continue')}
-            className="btn-primary w-full border border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-            id="btn-save-next-receipt"
-          >
-            {isSubmitting ? (
-              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-emerald-300 border-t-transparent" />
-            ) : (
-              <>
-                <SaveIcon /> Save & Add Next
-              </>
-            )}
-          </button>
+          {showContinueButton && (
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => submitForm('continue')}
+              className="btn-primary w-full border border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+              id="btn-save-next-receipt"
+            >
+              {isSubmitting ? (
+                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-emerald-300 border-t-transparent" />
+              ) : (
+                <>
+                  <SaveIcon /> {saveNextButtonLabel}
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </form>
