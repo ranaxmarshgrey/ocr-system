@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { uploadReceiptImage } from '../api/upload';
 import { runReceiptOCR } from '../api/ocr';
-import { createReceipt } from '../api/receipts';
+import { createReceipt, queryReceipts } from '../api/receipts';
 import VerificationForm from '../components/VerificationForm';
 import { getPendingCount } from '../lib/offlineQueue';
 
@@ -21,6 +21,28 @@ const PIPELINE_STAGES = [
   { key: 'ocr', label: 'OCR Extract' },
   { key: 'verify', label: 'Verify & Save' },
 ];
+
+function getLocalDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatEntryDateLabel(dateStr) {
+  if (!dateStr) return 'Select Date';
+  const today = getLocalDateString();
+  const yesterday = getLocalDateString(new Date(Date.now() - 86400000));
+
+  if (dateStr === today) return 'Today';
+  if (dateStr === yesterday) return 'Yesterday';
+
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
 
 /* ── SVG icons ───────────────────────────────────── */
 const CameraIcon = () => (
@@ -151,6 +173,11 @@ export default function CaptureReceipt() {
   const [dragOver, setDragOver] = useState(false);
   const [shakeError, setShakeError] = useState(false);
   const [savedOffline, setSavedOffline] = useState(false);
+  const [selectedRoute, setSelectedRoute] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
+  const [routeEntries, setRouteEntries] = useState([]);
+  const [entriesLoading, setEntriesLoading] = useState(false);
+  const [entriesError, setEntriesError] = useState('');
 
   const cameraInputRef = useRef(null);
   const galleryInputRef = useRef(null);
@@ -171,6 +198,55 @@ export default function CaptureReceipt() {
       if (localPreview) URL.revokeObjectURL(localPreview);
     };
   }, [localPreview, stopCamera]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadRouteEntries() {
+      if (!selectedRoute) {
+        setRouteEntries([]);
+        setEntriesError('');
+        return;
+      }
+
+      setEntriesLoading(true);
+      setEntriesError('');
+
+      try {
+        const data = await queryReceipts({ route: selectedRoute });
+        if (ignore) return;
+
+        const grouped = data.reduce((acc, receipt) => {
+          const key = receipt.date?.split('T')[0];
+          if (!key) return acc;
+          if (!acc[key]) {
+            acc[key] = { date: key, count: 0, receipts: [] };
+          }
+          acc[key].count += 1;
+          acc[key].receipts.push(receipt);
+          return acc;
+        }, {});
+
+        const entries = Object.values(grouped).sort((a, b) => b.date.localeCompare(a.date));
+        const today = getLocalDateString();
+
+        if (!entries.some((entry) => entry.date === today)) {
+          entries.unshift({ date: today, count: 0, receipts: [] });
+        }
+
+        setRouteEntries(entries);
+      } catch (err) {
+        if (!ignore) setEntriesError(err.message || 'Unable to load daily entries');
+      } finally {
+        if (!ignore) setEntriesLoading(false);
+      }
+    }
+
+    loadRouteEntries();
+    return () => {
+      ignore = true;
+    };
+  }, [selectedRoute]);
 
   async function startCamera() {
     setError(null);
@@ -349,6 +425,27 @@ export default function CaptureReceipt() {
     });
   }
 
+  function handleRouteSelect(route) {
+    setSelectedRoute(route);
+    setSelectedDate('');
+    setEntriesError('');
+    reset();
+  }
+
+  function startManualEntry(dateValue = getLocalDateString()) {
+    setSelectedDate(dateValue);
+    setUploadResult({ imagePath: '', route: selectedRoute, date: dateValue });
+    setProcessedPreview(null);
+    setOcrResult(null);
+    setOcrError(null);
+    setSavedReceiptResult(null);
+    setSaveWarnings([]);
+    setSaveError(null);
+    setSavedOffline(false);
+    setError(null);
+    setStep(STEPS.done);
+  }
+
   /* ── Derived state for active step ───────────── */
   const activeStepIndex =
     step === STEPS.idle ? 0 :
@@ -425,70 +522,80 @@ export default function CaptureReceipt() {
         {/* ═══ IDLE STATE ════════════════════════════ */}
         {step === STEPS.idle && !cameraActive && (
           <section className="animate-slide-up space-y-5">
-            {/* Drop zone */}
-            <div
-              className={`drop-zone flex flex-col items-center gap-4 px-6 py-12 text-center ${dragOver ? 'drag-over' : ''}`}
-              onDragOver={onDragOver}
-              onDragLeave={onDragLeave}
-              onDrop={onDrop}
-              onClick={() => galleryInputRef.current?.click()}
-              id="drop-zone"
-            >
-              <div className="rounded-2xl bg-emerald-500/10 p-4 text-emerald-400">
-                <UploadCloudIcon />
+            <div className="glass rounded-2xl border border-emerald-500/20 p-5">
+              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.24em] text-emerald-400/80">
+                Choose route first
+              </p>
+              <h2 className="mt-2 text-lg font-bold text-slate-100">Select the ledger route</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Pick Malur-Masthi or Nelamangala, then open the day you want to enter.
+              </p>
+
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                {['MALUR-MASTHI', 'NELAMANGALA'].map((route) => (
+                  <button
+                    key={route}
+                    type="button"
+                    onClick={() => handleRouteSelect(route)}
+                    className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${
+                      selectedRoute === route
+                        ? 'border-emerald-500 bg-emerald-500/15 text-emerald-300'
+                        : 'border-white/10 bg-slate-900/70 text-slate-300 hover:border-emerald-500/40 hover:text-slate-100'
+                    }`}
+                  >
+                    {route === 'MALUR-MASTHI' ? '🚛 MALUR-MASTHI' : '🚚 NELAMANGALA'}
+                  </button>
+                ))}
               </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-200">
-                  Drop receipt image here
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  or click to browse • JPEG, PNG, WebP, HEIC up to 10 MB
-                </p>
+            </div>
+
+            {selectedRoute && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Daily entries</p>
+                    <p className="text-sm text-slate-300">{selectedRoute === 'MALUR-MASTHI' ? 'Malur-Masthi' : 'Nelmangala'} ledger</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRouteSelect('')}
+                    className="text-xs font-semibold text-emerald-400"
+                  >
+                    Change route
+                  </button>
+                </div>
+
+                {entriesLoading ? (
+                  <div className="glass rounded-2xl border border-white/5 p-4 text-sm text-slate-400">
+                    Loading daily entries…
+                  </div>
+                ) : entriesError ? (
+                  <div className="glass rounded-2xl border border-red-500/20 bg-red-950/20 p-4 text-sm text-red-300">
+                    {entriesError}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {routeEntries.map((entry) => (
+                      <button
+                        key={entry.date}
+                        type="button"
+                        onClick={() => startManualEntry(entry.date)}
+                        className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-left transition hover:border-emerald-500/40 hover:bg-emerald-500/10"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-slate-100">{formatEntryDateLabel(entry.date)}</p>
+                          <p className="text-xs text-slate-500">{entry.count} entr{entry.count === 1 ? 'y' : 'ies'} saved</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-semibold text-emerald-400">Open</p>
+                          <p className="text-[0.65rem] text-slate-500">{entry.date}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-
-            {/* Divider */}
-            <div className="flex items-center gap-3">
-              <div className="h-px flex-1 bg-white/5" />
-              <span className="text-[0.65rem] font-medium uppercase tracking-wider text-slate-600">
-                or use camera
-              </span>
-              <div className="h-px flex-1 bg-white/5" />
-            </div>
-
-            {/* Camera buttons */}
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={startCamera}
-                className="btn-primary w-full"
-                id="btn-open-camera"
-              >
-                <CameraIcon /> Live Camera
-              </button>
-              <button
-                type="button"
-                onClick={() => cameraInputRef.current?.click()}
-                className="btn-secondary w-full"
-                id="btn-native-camera"
-              >
-                <ImageIcon /> Take Photo
-              </button>
-            </div>
-
-            {/* Direct Digital Entry shortcut */}
-            <button
-              type="button"
-              onClick={() => {
-                setUploadResult({ imagePath: '' });
-                setOcrResult(null);
-                setStep(STEPS.done);
-              }}
-              className="w-full py-3 px-4 rounded-xl bg-slate-900 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition hover:bg-emerald-500/10 flex items-center justify-center gap-2"
-              id="btn-direct-digital-entry"
-            >
-              ✍️ Direct Digital Entry (Fast Manual & Autocomplete)
-            </button>
+            )}
 
             {error && (
               <div className="animate-slide-up rounded-xl border border-red-500/20 bg-red-950/30 p-4">
@@ -638,6 +745,8 @@ export default function CaptureReceipt() {
               fieldConfidence={ocrResult?.fieldConfidence || {}}
               imagePath={uploadResult.imagePath}
               ocrConfidence={ocrResult?.ocrConfidence || 85}
+              initialRoute={uploadResult?.route || selectedRoute}
+              initialDate={uploadResult?.date || selectedDate || getLocalDateString()}
               onSave={handleSaveReceipt}
               onRetake={reset}
               isSubmitting={isSaving}

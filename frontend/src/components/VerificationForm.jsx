@@ -95,6 +95,8 @@ export default function VerificationForm({
   fieldConfidence = {},
   imagePath = '',
   ocrConfidence = 90,
+  initialRoute = '',
+  initialDate = '',
   onSave,
   onRetake,
   isSubmitting = false,
@@ -103,9 +105,9 @@ export default function VerificationForm({
 
   const [formData, setFormData] = useState({
     lrNumber: ocrData.lrNumber || '',
-    route: ocrData.route || 'MALUR-MASTHI',
+    route: ocrData.route || initialRoute || '',
     ewayBillNumber: ocrData.ewayBillNumber || '',
-    date: ocrData.date || todayStr,
+    date: ocrData.date || initialDate || todayStr,
     consignor: ocrData.consignor || '',
     consignee: ocrData.consignee || '',
     destination: ocrData.destination || '',
