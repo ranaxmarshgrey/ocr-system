@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { fetchSuggestions } from '../api/receipts';
 
 const CONFIDENCE_THRESHOLD = 75;
@@ -103,7 +103,7 @@ export default function VerificationForm({
 }) {
   const todayStr = new Date().toISOString().split('T')[0];
 
-  const [formData, setFormData] = useState({
+  const buildInitialFormData = () => ({
     lrNumber: ocrData.lrNumber || '',
     route: ocrData.route || initialRoute || '',
     ewayBillNumber: ocrData.ewayBillNumber || '',
@@ -119,6 +119,12 @@ export default function VerificationForm({
     remarks: ocrData.remarks || '',
     enteredBy: 'Dispatcher',
   });
+
+  const [formData, setFormData] = useState(buildInitialFormData);
+
+  useEffect(() => {
+    setFormData(buildInitialFormData());
+  }, [ocrData, initialRoute, initialDate]);
 
   const [touchedFields, setTouchedFields] = useState({});
   const [formErrors, setFormErrors] = useState({});
@@ -158,8 +164,7 @@ export default function VerificationForm({
     return Object.keys(errors).length === 0;
   }
 
-  function handleSubmit(e) {
-    e.preventDefault();
+  function submitForm(action = 'save') {
     if (!validate()) return;
 
     const payload = {
@@ -169,7 +174,17 @@ export default function VerificationForm({
       verificationStatus: 'Verified',
     };
 
+    if (action === 'continue') {
+      onSave(payload, { continueEntry: true });
+      return;
+    }
+
     onSave(payload);
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    submitForm('save');
   }
 
   return (
@@ -517,7 +532,7 @@ export default function VerificationForm({
       </div>
 
       {/* Action Buttons */}
-      <div className="grid grid-cols-2 gap-3 pt-2">
+      <div className="grid grid-cols-1 gap-3 pt-2">
         <button
           type="button"
           onClick={onRetake}
@@ -527,20 +542,37 @@ export default function VerificationForm({
         >
           <RefreshIcon /> Reset / Change Photo
         </button>
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="btn-primary w-full"
-          id="btn-save-receipt"
-        >
-          {isSubmitting ? (
-            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-          ) : (
-            <>
-              <SaveIcon /> Save Digital Receipt
-            </>
-          )}
-        </button>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="btn-primary w-full"
+            id="btn-save-receipt"
+          >
+            {isSubmitting ? (
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            ) : (
+              <>
+                <SaveIcon /> Save Receipt
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            disabled={isSubmitting}
+            onClick={() => submitForm('continue')}
+            className="btn-primary w-full border border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+            id="btn-save-next-receipt"
+          >
+            {isSubmitting ? (
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-emerald-300 border-t-transparent" />
+            ) : (
+              <>
+                <SaveIcon /> Save & Add Next
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </form>
   );

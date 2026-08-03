@@ -356,7 +356,7 @@ export default function CaptureReceipt() {
   }
 
   /* ── Handle Save Receipt to MongoDB ──────────── */
-  async function handleSaveReceipt(payload) {
+  async function handleSaveReceipt(payload, options = {}) {
     setIsSaving(true);
     setSaveError(null);
     setSaveWarnings([]);
@@ -367,6 +367,25 @@ export default function CaptureReceipt() {
       setSavedReceiptResult(result.receipt);
       setSaveWarnings(result.warnings || []);
       setSavedOffline(!!result.offline);
+
+      if (options.continueEntry) {
+        setUploadResult({ imagePath: '', route: payload.route, date: payload.date });
+        setProcessedPreview(null);
+        setOcrResult(null);
+        setOcrError(null);
+        setError(null);
+        setStatusMessage('');
+        setUploadProgress(0);
+        setLocalPreview((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return null;
+        });
+        setSelectedRoute(payload.route || selectedRoute);
+        setSelectedDate(payload.date || selectedDate);
+        setStep(STEPS.done);
+        return;
+      }
+
       setStep(STEPS.saved);
     } catch (err) {
       setSaveError(err.message);
